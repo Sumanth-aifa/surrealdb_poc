@@ -8,6 +8,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("database error")]
     Db,
+    #[error("Id not provided")]
+    IdNotFound,
 }
 
 impl IntoResponse for Error {

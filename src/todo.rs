@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::error::Error;
 use axum::{
     extract::{Query, State},
@@ -54,11 +56,23 @@ pub async fn list_todos(db: Db) -> Result<Json<Vec<Todo>>, Error> {
     Ok(Json(todos))
 }
 
-// pub async fn update_todo(
-//     db: Db,
-//     Query(id): Query<String>,
-//     Json(input): Json<Todo>,
-// ) -> Result<Json<Option<Todo>>, Error> {
-//     let updated_todo = db.update("todo", &*id).content(input).await?;
-//     Ok(Json(updated_todo))
-// }
+pub async fn update_todo(
+    db: Db,
+    Query(params): Query<HashMap<String, String>>,
+    Json(input): Json<Todo>,
+) -> Result<Json<Option<Todo>>, Error> {
+    let id = params.get("id").ok_or_else(|| Error::IdNotFound)?;
+    dbg!(&id);
+    let updated_todo = db.update(("todo", id)).content(input).await?;
+    Ok(Json(updated_todo))
+}
+
+pub async fn delete_todo(
+    db: Db,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Option<Todo>>, Error> {
+    let id = params.get("id").ok_or_else(|| Error::IdNotFound)?;
+    dbg!(&id);
+    let deleted = db.delete(("todo", id)).await?;
+    Ok(Json(deleted))
+}
