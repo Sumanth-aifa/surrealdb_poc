@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::error::Error;
 use axum::{
     extract::{Query, State},
     Json,
@@ -8,7 +7,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use surrealdb::{engine::any::Any, sql::Thing, Surreal};
 
-type Db = State<Surreal<Any>>;
+use crate::error::Error;
+use crate::APIResult;
+
+pub type Db = State<Surreal<Any>>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Todo {
@@ -23,11 +25,7 @@ pub struct CreateTodoInput {
     pub todos: Vec<Todo>,
 }
 
-pub async fn create_todo(
-    db: Db,
-    Json(input): Json<CreateTodoInput>,
-) -> Result<Json<Vec<Todo>>, Error> {
-    println!("Received input: {:?}", input);
+pub async fn create_todo(db: Db, Json(input): Json<CreateTodoInput>) -> APIResult<Vec<Todo>> {
     let mut created_todos: Vec<Todo> = Vec::new();
 
     for todo in input.todos {
@@ -36,23 +34,19 @@ pub async fn create_todo(
                 created_todos.push(created);
             }
             Ok(None) => {
-                println!("Failed to create todo - returned None");
                 return Ok(Default::default());
             }
             Err(e) => {
-                println!("Error creating todo: {:?}", e);
                 return Err(Error::from(e));
             }
         }
     }
 
-    println!("Final created_todos: {:?}", created_todos);
     Ok(Json(created_todos))
 }
 
-pub async fn list_todos(db: Db) -> Result<Json<Vec<Todo>>, Error> {
+pub async fn list_todo(db: Db) -> APIResult<Vec<Todo>> {
     let todos: Vec<Todo> = db.select("todo").await?;
-
     Ok(Json(todos))
 }
 
@@ -60,9 +54,8 @@ pub async fn update_todo(
     db: Db,
     Query(params): Query<HashMap<String, String>>,
     Json(input): Json<Todo>,
-) -> Result<Json<Option<Todo>>, Error> {
+) -> APIResult<Option<Todo>> {
     let id = params.get("id").ok_or_else(|| Error::IdNotFound)?;
-    dbg!(&id);
     let updated_todo = db.update(("todo", id)).content(input).await?;
     Ok(Json(updated_todo))
 }
@@ -70,9 +63,8 @@ pub async fn update_todo(
 pub async fn delete_todo(
     db: Db,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Option<Todo>>, Error> {
+) -> APIResult<Option<Todo>> {
     let id = params.get("id").ok_or_else(|| Error::IdNotFound)?;
-    dbg!(&id);
     let deleted = db.delete(("todo", id)).await?;
     Ok(Json(deleted))
 }
