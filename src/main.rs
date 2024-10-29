@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Allow the endpoint to be configured via a `SURREALDB_ENDPOINT` environment variable
     // or fallback to memory. This makes it possible to configure the endpoint at runtime.
     let endpoint =
-        env::var("SURREALDB_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:8000".to_owned());
+        env::var("SURREALDB_ENDPOINT").unwrap_or_else(|_| "http://localhost:8000".to_owned());
 
     let root = Root {
         username: "admin",
@@ -29,9 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure the namespace amd database to use.
     db.use_ns("Rise").use_db("TodoSQL").await?;
 
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("localhost:8080").await?;
     let router = create_router(db);
-
+    println!("server running at 8080");
     axum::serve(listener, router).await?;
 
     Ok(())

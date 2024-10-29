@@ -96,9 +96,6 @@ pub async fn update_book(
 
 pub async fn delete_book(db: Db, Query(Id { id }): Query<Id>) -> APIResultStatus {
     Ok(Json(
-        db.query(QUERY_DELETE)
-            .bind(("id", id))
-            .await?
-            .take(0)?,
+        db.query(QUERY_DELETE).bind(("id", id)).await?.take(0)?,
     ))
 }

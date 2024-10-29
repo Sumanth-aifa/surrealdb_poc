@@ -10,7 +10,10 @@ axum = { version = "0.7.7", default-features = false, features = [
     "tokio",
     "http2",
 ] }
+bcrypt = "0.15.1"
+chrono = "0.4.38"
 dotenv = { version = "0.15.0", default-features = false }
+jsonwebtoken = "9.3.0"
 
 serde = { version = "1.0.209", default-features = false, features = ["derive"] }
 surrealdb = { version = "2.0.4", default-features = false, features = ["protocol-http"] }

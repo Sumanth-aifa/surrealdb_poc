@@ -3108,7 +3108,10 @@ name = "surrealdb-rust"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bcrypt",
+ "chrono",
  "dotenv",
+ "jsonwebtoken",
  "serde",
  "surrealdb",
  "thiserror",
