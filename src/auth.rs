@@ -2,115 +2,27 @@ use axum::{
     extract::Request, http::header::AUTHORIZATION, http::StatusCode, middleware::Next,
     response::Response, Json,
 };
-use bcrypt::{hash, verify, DEFAULT_COST};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
+use surrealdb::opt::auth::Root;
 
 use crate::todo::Db;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct User {
-    pub id: Option<Thing>,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct LoginCreds {
-    pub email: String,
+    pub username: String,
     pub password: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
+    pub expires_in_hours: i64,
 }
 
-#[derive(Debug, Serialize)]
-pub struct RegisterResponse {
-    message: String,
-    email: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Claims {
-    sub: String,
-    exp: usize,
-}
-
-pub async fn register_user(
-    db: Db,
-    Json(user): Json<User>,
-) -> Result<Json<RegisterResponse>, (StatusCode, String)> {
-    let existing_user: Option<User> = db
-        .select(("user", &user.email))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if existing_user.is_some() {
-        return Err((StatusCode::CONFLICT, "User already exists".to_string()));
-    }
-
-    let hashed_pass = hash(user.password, DEFAULT_COST)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let user_val = User {
-        id: None,
-        email: user.email.clone(),
-        password: hashed_pass,
-    };
-    let _created_user: Option<User> = db
-        .create(("user", &user.email))
-        .content(user_val)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(Json(RegisterResponse {
-        message: "User created Successfully".to_string(),
-        email: user.email.clone(),
-    }))
-}
-
-pub async fn login_user(
-    db: Db,
-    Json(user): Json<LoginCreds>,
-) -> Result<Json<AuthResponse>, (StatusCode, String)> {
-    let user_cred: Option<User> = db
-        .select(("user", &user.email))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let user_main =
-        user_cred.ok_or((StatusCode::UNAUTHORIZED, "Invalid Credentials ".to_string()))?;
-    let password_matches = verify(user.password.as_bytes(), &user_main.password)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if !password_matches {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid password".to_string()));
-    }
-
-    let expiration = chrono::Utc::now().timestamp() as usize + 1 * 3600;
-
-    let claims = Claims {
-        sub: user.email.clone(),
-        exp: expiration,
-    };
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(b"hello"),
-    )
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(AuthResponse { token }))
-}
-
-async fn verify_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let token_data = decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(b"hello"),
-        &Validation::default(),
-    )?;
-    Ok(token_data.claims)
-}
 pub async fn auth_middleware(
+    db: Db,
     mut req: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, String)> {
@@ -135,11 +47,53 @@ pub async fn auth_middleware(
     let mut header = auth_header.split_whitespace();
     let (_, token) = (header.next(), header.next());
     let token = token.unwrap_or("token not found ");
-    let claims = verify_token(token)
+
+    match db.authenticate(token).await {
+        Ok(_) => Ok(next.run(req).await),
+        Err(e) => {
+            if e.to_string().contains("expired") {
+                Err((
+                    StatusCode::UNAUTHORIZED,
+                    "Token has expired please login again".to_string(),
+                ))
+            } else {
+                Err((StatusCode::UNAUTHORIZED, "Invalid token".to_string()))
+            }
+        }
+    }
+}
+
+pub async fn login_user(
+    db: Db,
+    Json(credentials): Json<LoginCreds>,
+) -> Result<Json<AuthResponse>, (StatusCode, String)> {
+    let root = Root {
+        username: credentials.username.as_str(),
+        password: credentials.password.as_str(),
+    };
+
+    // Sign in and get the token
+    let response = db
+        .signin(root)
         .await
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid token".to_string()))?;
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
-    req.extensions_mut().insert(claims);
+    let _ = db
+        .use_ns("Rise")
+        .use_db("TodoSQL")
+        .await
+        .map_err(|_| "Something went wrong with namespace or database");
+    // Get the token as string
+    let token = response.as_insecure_token();
+    let expires_at = chrono::Utc::now()
+        .checked_add_signed(Duration::hours(1))
+        .unwrap()
+        .timestamp();
+    let now = Utc::now().timestamp();
+    let expires_at = (expires_at - now) / 3600;
 
-    Ok(next.run(req).await)
+    Ok(Json(AuthResponse {
+        token: token.to_string(),
+        expires_in_hours: expires_at,
+    }))
 }

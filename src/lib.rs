@@ -9,16 +9,17 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+
 use surrealdb::engine::any::Any;
+
 use surrealdb::Surreal;
 
 pub type APIResult<T> = Result<Json<T>, error::Error>;
 pub type APIResultStatus = Result<Json<surrealdb::Value>, error::Error>;
 
 pub fn create_router(db: Surreal<Any>) -> Router {
-    let public_routes = Router::new()
-        .route("/register", post(auth::register_user))
-        .route("/login", post(auth::login_user));
+    let public_routes = Router::new().route("/login", post(auth::login_user));
+
     let todo_routes = Router::new()
         // Todoapi
         .route("/create_todo", post(todo::create_todo))
